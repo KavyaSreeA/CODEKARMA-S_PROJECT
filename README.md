@@ -2,8 +2,6 @@
 
 > ⚡ Bringing physics and weather together in one interactive 3D simulation  
 
-![Demo Screenshot](docs/demo.png)
-
 ---
 
 ## ✨ Overview
