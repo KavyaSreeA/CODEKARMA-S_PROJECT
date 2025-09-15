@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Enhanced Bullet Simulation with Weather Effects</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+  <style>
+    html,body { height:100%; margin:0; background:#111; color:#fff; font-family: Arial, sans-serif; }
+    #renderCanvas { width:100%; height:100vh; display:block; }
+    .info {
+      position: absolute; left: 10px; top: 10px;
+      background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+      font-size: 13px; color: #fff; max-width: 380px;
+      border: 1px solid #333;
+    }
+    .weather-param { 
+      margin: 4px 0; 
+      display: flex; 
+      justify-content: space-between; 
+    }
+    .param-label { color: #ccc; }
+    .param-value { color: #fff; font-weight: bold; }
+    .impact-text { color: #ff6b6b; font-size: 11px; margin-top: 8px; }
+    .controls {
+      position: absolute; right: 10px; top: 10px;
+      background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+      border: 1px solid #333;
+    }
+    .btn {
+      background: #c0392b; color: white; border: none;
+      padding: 10px 20px; margin: 5px; border-radius: 5px;
+      cursor: pointer; font-size: 14px;
+    }
+    .btn:hover { background: #a93226; }
+    .status {
+      position: absolute; bottom: 20px; left: 50%;
+      transform: translateX(-50%); background: rgba(0,0,0,0.8);
+      padding: 10px 20px; border-radius: 20px; color: #fff;
+      font-size: 16px; border: 1px solid #333;
+    }
+  </style>
+</head>
+<body>
+<canvas id="renderCanvas"></canvas>
+
+<div class="info">
+  <b>🌦️ Weather Conditions</b>
+  <div class="weather-param">
+    <span class="param-label">Wind Speed:</span>
+    <span class="param-value" id="windSpeed">—</span>
+  </div>
+  <div class="weather-param">
+    <span class="param-label">Wind Direction:</span>
+    <span class="param-value" id="windDir">—</span>
+  </div>
+  <div class="weather-param">
+    <span class="param-label">Humidity:</span>
+    <span class="param-value" id="humidity">—</span>
+  </div>
+  <div class="weather-param">
+    <span class="param-label">Pressure:</span>
+    <span class="param-value" id="pressure">—</span>
+  </div>
+  <div class="weather-param">
+    <span class="param-label">Rain Intensity:</span>
+    <span class="param-value" id="rain">—</span>
+  </div>
+  <div class="impact-text">
+    ⚠️ Severe weather conditions will cause significant bullet drift!
+  </div>
+</div>
+
+<div class="controls">
+  <button class="btn" id="fireBtn">🔥 FIRE</button>
+  <button class="btn" id="resetBtn">🔄 RESET</button>
+  <div style="margin-top: 10px; font-size: 12px;">
+    <label><input type="checkbox" id="showTrail" checked> Show Trail</label>
+  </div>
+</div>
+
+<div class="status" id="status">Ready to fire</div>
+
+<script>
+  // Scene setup
+  const canvas = document.getElementById("renderCanvas");
+  const engine = new BABYLON.Engine(canvas, true);
+  const scene = new BABYLON.Scene(engine);
+  scene.clearColor = new BABYLON.Color3(0.02, 0.02, 0.05);
+
+  // Camera
+  const camera = new BABYLON.ArcRotateCamera("cam", -Math.PI/2, Math.PI/3.5, 25, new BABYLON.Vector3(0,2,0), scene);
+  camera.attachControl(canvas, true);
+
+  // Lighting
+  const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0.2,1,-0.3), scene);
+  light.intensity = 0.8;
+
+  // Ground
+  const ground = BABYLON.MeshBuilder.CreateGround("ground", {width:80, height:80}, scene);
+  const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+  groundMat.diffuseColor = new BABYLON.Color3(0.1, 0.15, 0.1);
+  groundMat.specularColor = new BABYLON.Color3(0, 0, 0);
+  ground.material = groundMat;
+
+  // Shooter (person silhouette)
+  const shooter = BABYLON.MeshBuilder.CreateBox("shooter", {width:1.5, height:3, depth:0.8}, scene);
+  shooter.position = new BABYLON.Vector3(0, 1.5, -8);
+  const shooterMat = new BABYLON.StandardMaterial("shooterMat", scene);
+  shooterMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+  shooter.material = shooterMat;
+
+  // Gun
+  const gun = BABYLON.MeshBuilder.CreateBox("gun", {width:0.3, height:0.3, depth:2}, scene);
+  gun.position = new BABYLON.Vector3(0.5, 2.2, -7.5);
+  gun.rotation.y = Math.PI/20; // slight angle
+  const gunMat = new BABYLON.StandardMaterial("gunMat", scene);
+  gunMat.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+  gun.material = gunMat;
+
+  // Target
+  const target = BABYLON.MeshBuilder.CreateCylinder("target", {diameter:3, height:0.1}, scene);
+  target.position = new BABYLON.Vector3(0, 0.05, 30);
+  const targetMat = new BABYLON.StandardMaterial("targetMat", scene);
+  targetMat.diffuseColor = new BABYLON.Color3(0.8, 0.2, 0.2);
+  target.material = targetMat;
+
+  // Bullseye rings
+  for(let i = 0; i < 3; i++) {
+    const ring = BABYLON.MeshBuilder.CreateTorus("ring" + i, {diameter:2.5 - i*0.5, thickness:0.05}, scene);
+    ring.position = new BABYLON.Vector3(0, 0.1, 30);
+    ring.rotation.x = Math.PI/2;
+    const ringMat = new BABYLON.StandardMaterial("ringMat" + i, scene);
+    ringMat.diffuseColor = i % 2 === 0 ? new BABYLON.Color3(1,1,1) : new BABYLON.Color3(0,0,0);
+    ring.material = ringMat;
+  }
+
+  // Bullet
+  const bullet = BABYLON.MeshBuilder.CreateSphere("bullet", {diameter:0.15}, scene);
+  const bulletMat = new BABYLON.StandardMaterial("bulletMat", scene);
+  bulletMat.diffuseColor = new BABYLON.Color3(0.8, 0.6, 0.2);
+  bulletMat.emissiveColor = new BABYLON.Color3(0.2, 0.1, 0);
+  bullet.material = bulletMat;
+  bullet.isVisible = false;
+
+  // Bullet trail
+  const trailPoints = [];
+  let trailMesh = null;
+
+  // Particle systems for weather effects
+  let rainSystem = null;
+  let windSystem = null;
+
+  // Create rain effect
+  function createRain(intensity) {
+    if(rainSystem) rainSystem.dispose();
+    if(intensity <= 0) return;
+
+    rainSystem = new BABYLON.ParticleSystem("rain", 1000, scene);
+    rainSystem.particleTexture = new BABYLON.Texture("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", scene);
+    
+    rainSystem.emitter = new BABYLON.Vector3(0, 20, 0);
+    rainSystem.minEmitBox = new BABYLON.Vector3(-40, 0, -40);
+    rainSystem.maxEmitBox = new BABYLON.Vector3(40, 0, 40);
+    
+    rainSystem.color1 = new BABYLON.Color4(0.5, 0.7, 1, 0.8);
+    rainSystem.color2 = new BABYLON.Color4(0.3, 0.5, 0.9, 0.6);
+    rainSystem.colorDead = new BABYLON.Color4(0.3, 0.5, 0.9, 0);
+    
+    rainSystem.minSize = 0.05;
+    rainSystem.maxSize = 0.1;
+    rainSystem.minLifeTime = 0.5;
+    rainSystem.maxLifeTime = 1.2;
+    rainSystem.emitRate = intensity * 200;
+    
+    rainSystem.gravity = new BABYLON.Vector3(0, -40, 0);
+    rainSystem.direction1 = new BABYLON.Vector3(-1, -5, -1);
+    rainSystem.direction2 = new BABYLON.Vector3(1, -5, 1);
+    
+    rainSystem.start();
+  }
+
+  // Create wind visualization
+  function createWindEffect(speed, direction) {
+    if(windSystem) windSystem.dispose();
+    if(speed <= 0) return;
+
+    windSystem = new BABYLON.ParticleSystem("wind", 300, scene);
+    windSystem.particleTexture = new BABYLON.Texture("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", scene);
+    
+    const windRad = direction * Math.PI / 180;
+    const windX = Math.sin(windRad) * speed * 0.5;
+    const windZ = Math.cos(windRad) * speed * 0.5;
+    
+    windSystem.emitter = new BABYLON.Vector3(-windX * 2, 3, -windZ * 2);
+    windSystem.minEmitBox = new BABYLON.Vector3(-20, -1, -20);
+    windSystem.maxEmitBox = new BABYLON.Vector3(20, 1, 20);
+    
+    windSystem.color1 = new BABYLON.Color4(0.8, 0.8, 0.8, 0.3);
+    windSystem.color2 = new BABYLON.Color4(0.6, 0.6, 0.6, 0.1);
+    windSystem.colorDead = new BABYLON.Color4(0.5, 0.5, 0.5, 0);
+    
+    windSystem.minSize = 0.3;
+    windSystem.maxSize = 0.8;
+    windSystem.minLifeTime = 2;
+    windSystem.maxLifeTime = 4;
+    windSystem.emitRate = speed * 10;
+    
+    windSystem.gravity = new BABYLON.Vector3(0, -2, 0);
+    windSystem.direction1 = new BABYLON.Vector3(windX - 2, -1, windZ - 2);
+    windSystem.direction2 = new BABYLON.Vector3(windX + 2, 1, windZ + 2);
+    
+    windSystem.start();
+  }
+
+  // Synthetic weather data (designed to cause significant drift)
+  const weatherData = {
+    windSpeed: 35.5,    // Strong wind in km/h
+    windDirection: 75,  // Wind from northeast
+    humidity: 85.2,     // High humidity
+    pressure: 995.3,    // Low pressure (storm conditions)
+    rainIntensity: 7.5  // Moderate to heavy rain
+  };
+
+  // Bullet physics
+  let bulletState = null;
+  let isFiring = false;
+  let fireTime = 0;
+  const GRAVITY = 9.81;
+  const MUZZLE_VELOCITY = 400; // m/s (reduced for visibility)
+  const TIME_SCALE = 0.08; // Slow motion factor
+
+  // Calculate weather effects on bullet
+  function calculateWeatherEffects() {
+    const windEffect = weatherData.windSpeed * 0.03; // Wind drift coefficient
+    const humidityEffect = weatherData.humidity * 0.002; // Air density effect
+    const pressureEffect = (1013.25 - weatherData.pressure) * 0.001; // Pressure effect
+    const rainEffect = weatherData.rainIntensity * 0.008; // Rain drag effect
+    
+    return {
+      windDrift: windEffect,
+      humidityDrag: humidityEffect,
+      pressureDrift: pressureEffect,
+      rainDrag: rainEffect
+    };
+  }
+
+  // Fire bullet
+  function fireBullet() {
+    if(isFiring) return;
+    
+    isFiring = true;
+    fireTime = 0;
+    trailPoints.length = 0;
+    
+    // Starting position (gun muzzle)
+    const startPos = new BABYLON.Vector3(0.7, 2.2, -6.5);
+    
+    // Initial velocity (aimed at target but will drift due to weather)
+    const targetDir = target.position.subtract(startPos).normalize();
+    const initialVel = targetDir.scale(MUZZLE_VELOCITY * 0.1); // Scaled for slow motion
+    
+    bulletState = {
+      position: startPos.clone(),
+      velocity: initialVel.clone()
+    };
+    
+    bullet.position.copyFrom(bulletState.position);
+    bullet.isVisible = true;
+    
+    document.getElementById('status').textContent = 'Firing... watch the weather effects!';
+  }
+
+  // Update bullet physics
+  function updateBullet(deltaTime) {
+    if(!isFiring || !bulletState) return;
+    
+    const dt = deltaTime * TIME_SCALE;
+    fireTime += dt;
+    
+    const effects = calculateWeatherEffects();
+    const windRad = weatherData.windDirection * Math.PI / 180;
+    
+    // Apply forces
+    const gravity = new BABYLON.Vector3(0, -GRAVITY, 0);
+    const windForce = new BABYLON.Vector3(
+      Math.sin(windRad) * effects.windDrift,
+      0,
+      Math.cos(windRad) * effects.windDrift
+    );
+    
+    // Air resistance (increased by humidity and rain)
+    const dragCoeff = 0.1 + effects.humidityDrag + effects.rainDrag;
+    const airResistance = bulletState.velocity.scale(-dragCoeff);
+    
+    // Update velocity
+    const totalForce = gravity.add(windForce).add(airResistance);
+    bulletState.velocity = bulletState.velocity.add(totalForce.scale(dt));
+    
+    // Update position
+    bulletState.position = bulletState.position.add(bulletState.velocity.scale(dt));
+    bullet.position.copyFrom(bulletState.position);
+    
+    // Add to trail
+    if(document.getElementById('showTrail').checked) {
+      trailPoints.push(bulletState.position.clone());
+      updateTrail();
+    }
+    
+    // Check if bullet has traveled far enough or hit ground
+    if(bulletState.position.z > 35 || bulletState.position.y < 0 || fireTime > 8) {
+      endFiring();
+    }
+  }
+
+  // Update bullet trail
+  function updateTrail() {
+    if(trailMesh) trailMesh.dispose();
+    if(trailPoints.length < 2) return;
+    
+    const path = trailPoints;
+    trailMesh = BABYLON.MeshBuilder.CreateLines("trail", {points: path}, scene);
+    trailMesh.color = new BABYLON.Color3(1, 0.5, 0);
+  }
+
+  // End firing sequence
+  function endFiring() {
+    isFiring = false;
+    
+    const finalPos = bulletState.position;
+    const missDistance = Math.sqrt(
+      Math.pow(finalPos.x - target.position.x, 2) + 
+      Math.pow(finalPos.z - target.position.z, 2)
+    );
+    
+    document.getElementById('status').textContent = 
+      `Target missed by ${missDistance.toFixed(1)}m due to weather conditions!`;
+    
+    // Hide bullet after a delay
+    setTimeout(() => {
+      bullet.isVisible = false;
+    }, 2000);
+  }
+
+  // Reset simulation
+  function resetSimulation() {
+    isFiring = false;
+    bullet.isVisible = false;
+    if(trailMesh) trailMesh.dispose();
+    trailPoints.length = 0;
+    document.getElementById('status').textContent = 'Ready to fire';
+  }
+
+  // Update weather display
+  function updateWeatherDisplay() {
+    document.getElementById('windSpeed').textContent = `${weatherData.windSpeed} km/h`;
+    document.getElementById('windDir').textContent = `${weatherData.windDirection}°`;
+    document.getElementById('humidity').textContent = `${weatherData.humidity}%`;
+    document.getElementById('pressure').textContent = `${weatherData.pressure} hPa`;
+    document.getElementById('rain').textContent = `${weatherData.rainIntensity}/10`;
+  }
+
+  // Initialize weather effects
+  function initWeatherEffects() {
+    createRain(weatherData.rainIntensity);
+    createWindEffect(weatherData.windSpeed, weatherData.windDirection);
+    updateWeatherDisplay();
+  }
+
+  // Event listeners
+  document.getElementById('fireBtn').addEventListener('click', fireBullet);
+  document.getElementById('resetBtn').addEventListener('click', resetSimulation);
+
+  // Render loop
+  let lastTime = performance.now();
+  engine.runRenderLoop(() => {
+    const now = performance.now();
+    const deltaTime = (now - lastTime) / 1000;
+    lastTime = now;
+    
+    updateBullet(deltaTime);
+    scene.render();
+  });
+
+  // Handle resize
+  window.addEventListener('resize', () => {
+    engine.resize();
+  });
+
+  // Initialize
+  initWeatherEffects();
+
+  // Message listener for external parameter updates
+  window.addEventListener("message", (ev) => {
+    try {
+      const data = ev.data || {};
+      if (data.type === "updateParams") {
+        weatherData.windSpeed = Number(data.windSpeed_kmh ?? weatherData.windSpeed);
+        weatherData.windDirection = Number(data.windDir_deg ?? weatherData.windDirection);
+        weatherData.humidity = Number(data.humidity_pct ?? weatherData.humidity);
+        weatherData.pressure = Number(data.pressure_hpa ?? weatherData.pressure);
+        weatherData.rainIntensity = Number(data.rain ?? weatherData.rainIntensity);
+        
+        initWeatherEffects();
+      }
+    } catch(e) {
+      console.warn("Parameter update error:", e);
+    }
+  });
+</script>
+</body>
+</html>
