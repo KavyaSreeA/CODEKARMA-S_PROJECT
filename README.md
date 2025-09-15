@@ -69,27 +69,9 @@ environmental-twin/
 
 These parameters affect how the bullet drifts off its target in real time.
 
-🎥 Demo
+## 📜 License
 
-👉 Coming soon! (GIF/Video of slow-motion simulation)
-
-🧠 Use Cases
-
-🎓 Education — visualize physics concepts interactively
-
-🔬 Research — experiment with environmental effects on trajectories
-
-🎮 Gamification — use as a base for shooting or physics games
-
-🌍 Digital Twins — demonstrate environmental simulation techniques
-
-🤝 Contributing
-
-Pull requests are welcome! Please open an issue to discuss major changes before submitting.
-
-📜 License
-
-This project is licensed under the MIT License.
+-This project is licensed under the MIT License.
 Feel free to use, modify, and distribute.
 
-“Forecast + Ballistics = Predictive Simulation. Let’s make physics visible.” 
+**Forecast + Ballistics = Predictive Simulation. Let’s make physics visible.** 
